@@ -17,8 +17,9 @@ module MysqlCookbook
     require_relative 'helpers'
     include MysqlCookbook::HelpersBase
 
-    # FIXME: comment about what this does
-    declare_action_class.class_eval do
+    # action class methods are available within the actions and work as if the coded
+    # was inline the action. No messing with classes or passing in the new_resource
+    action_class do
       def create_system_user
         group 'mysql' do
           action :create
@@ -40,6 +41,7 @@ module MysqlCookbook
         # setting up multiple services.
         file "#{prefix_dir}/etc/mysql/my.cnf" do
           action :delete
+          not_if { node['init_package'] == 'systemd' }
         end
 
         file "#{prefix_dir}/etc/my.cnf" do
@@ -54,42 +56,20 @@ module MysqlCookbook
         end
 
         # Support directories
-        directory etc_dir do
-          owner run_user
-          group run_group
-          mode '0750'
-          recursive true
-          action :create
-        end
-
-        directory include_dir do
-          owner run_user
-          group run_group
-          mode '0750'
-          recursive true
-          action :create
+        [etc_dir, new_resource.include_dir, log_dir, new_resource.data_dir].each do |dir|
+          directory dir do
+            owner new_resource.run_user
+            group new_resource.run_group
+            mode '0750'
+            recursive true
+            action :create
+          end
         end
 
         directory run_dir do
-          owner run_user
-          group run_group
+          owner new_resource.run_user
+          group new_resource.run_group
           mode '0755'
-          recursive true
-          action :create
-        end
-
-        directory log_dir do
-          owner run_user
-          group run_group
-          mode '0750'
-          recursive true
-          action :create
-        end
-
-        directory data_dir do
-          owner run_user
-          group run_group
-          mode '0750'
           recursive true
           action :create
         end
@@ -98,8 +78,8 @@ module MysqlCookbook
         template "#{etc_dir}/my.cnf" do
           source 'my.cnf.erb'
           cookbook 'mysql'
-          owner run_user
-          group run_group
+          owner new_resource.run_user
+          group new_resource.run_group
           mode '0600'
           variables(config: new_resource)
           action :create
@@ -108,11 +88,13 @@ module MysqlCookbook
 
       def initialize_database
         # initialize database and create initial records
-        bash "#{name} initial records" do
+        bash "#{new_resource.name} initial records" do
           code init_records_script
           umask '022'
           returns [0, 1, 2] # facepalm
-          not_if "/usr/bin/test -f #{data_dir}/mysql/user.frm"
+          # Not sure yet why next line is being triggered on initial run,
+          # so I'm commenting it out for now
+          # not_if "/usr/bin/test -f #{new_resource.data_dir}/mysql/user.frm"
           action :run
         end
       end
@@ -143,61 +125,58 @@ module MysqlCookbook
       def configure_apparmor
         # Do not add these resource if inside a container
         # Only valid on Ubuntu
+        return if ::File.exist?('/.dockerenv') || ::File.exist?('/.dockerinit') || node['platform'] != 'ubuntu'
 
-        unless ::File.exist?('/.dockerenv') || ::File.exist?('/.dockerinit')
-          if node['platform'] == 'ubuntu'
-            # Apparmor
-            package 'apparmor' do
-              action :install
-            end
+        # Apparmor
+        package 'apparmor' do
+          action :install
+        end
 
-            directory '/etc/apparmor.d/local/mysql' do
-              owner 'root'
-              group 'root'
-              mode '0755'
-              recursive true
-              action :create
-            end
+        directory '/etc/apparmor.d/local/mysql' do
+          owner 'root'
+          group 'root'
+          mode '0755'
+          recursive true
+          action :create
+        end
 
-            template '/etc/apparmor.d/local/usr.sbin.mysqld' do
-              cookbook 'mysql'
-              source 'apparmor/usr.sbin.mysqld-local.erb'
-              owner 'root'
-              group 'root'
-              mode '0644'
-              action :create
-              notifies :restart, "service[#{instance} apparmor]", :immediately
-            end
+        template '/etc/apparmor.d/local/usr.sbin.mysqld' do
+          cookbook 'mysql'
+          source 'apparmor/usr.sbin.mysqld-local.erb'
+          owner 'root'
+          group 'root'
+          mode '0644'
+          action :create
+          notifies :restart, "service[#{new_resource.instance} apparmor]", :immediately
+        end
 
-            template '/etc/apparmor.d/usr.sbin.mysqld' do
-              cookbook 'mysql'
-              source 'apparmor/usr.sbin.mysqld.erb'
-              owner 'root'
-              group 'root'
-              mode '0644'
-              action :create
-              notifies :restart, "service[#{instance} apparmor]", :immediately
-            end
+        template '/etc/apparmor.d/usr.sbin.mysqld' do
+          cookbook 'mysql'
+          source "apparmor/#{node['platform']}-#{node['platform_version']}/usr.sbin.mysqld.erb"
+          owner 'root'
+          group 'root'
+          mode '0644'
+          action :create
+          notifies :restart, "service[#{new_resource.instance} apparmor]", :immediately
+        end
 
-            template "/etc/apparmor.d/local/mysql/#{instance}" do
-              cookbook 'mysql'
-              source 'apparmor/usr.sbin.mysqld-instance.erb'
-              owner 'root'
-              group 'root'
-              mode '0644'
-              variables(
-                config: new_resource,
-                mysql_name: mysql_name
-              )
-              action :create
-              notifies :restart, "service[#{instance} apparmor]", :immediately
-            end
+        template "/etc/apparmor.d/local/mysql/#{new_resource.instance}" do
+          cookbook 'mysql'
+          source 'apparmor/usr.sbin.mysqld-instance.erb'
+          owner 'root'
+          group 'root'
+          mode '0644'
+          variables(
+            config: new_resource,
+            mysql_name: mysql_name
+          )
+          action :create
+          notifies :restart, "service[#{new_resource.instance} apparmor]", :immediately
+        end
 
-            service "#{instance} apparmor" do
-              service_name 'apparmor'
-              action :nothing
-            end
-          end
+        service "#{new_resource.instance} apparmor" do
+          service_name 'apparmor'
+          action :nothing
         end
       end
     end
