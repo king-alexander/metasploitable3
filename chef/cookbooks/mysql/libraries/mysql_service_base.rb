@@ -93,7 +93,8 @@ module MysqlCookbook
           umask '022'
           returns [0, 1, 2] # facepalm
           # Not sure yet why next line is being triggered on initial run,
-          # so I'm commenting it out for now
+          # so I'm commenting it out for now.
+          # TODO: Figure out what's going on here
           # not_if "/usr/bin/test -f #{new_resource.data_dir}/mysql/user.frm"
           action :run
         end
