@@ -1,0 +1,66 @@
+{
+  "builders": [
+    {
+      "type": "amazon-ebs",
+      "region": "us-east-2",
+      "source_ami_filter": {
+          "filters": {
+              "virtualization-type": "hvm",
+              "name": "ubuntu/images/hvm/ubuntu-trusty-14.04-amd64-server-20150123",
+              "root-device-type": "ebs"
+          },
+          "owners": [
+              "099720109477"
+          ]
+      },
+      "instance_type": "t2.small",
+      "ssh_username": "ubuntu",
+      "ami_name": "metasploitable3-ubuntu-1404-hvm-{{timestamp}}-x86_64-ebs",
+      "tags": {
+          "Team": "NCATS OIS - Development",
+          "Application": "Vulnerable Instances",
+          "OS_Version": "Ubuntu 14.04",
+          "Release": "Latest",
+          "Base_AMI_Name": "{{ .SourceAMIName }}"
+      }
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "chef-solo",
+      "cookbook_paths": [
+        "{{template_dir}}/../../../chef/cookbooks"
+      ],
+      "run_list": [
+        "metasploitable::vm_tools",
+        "metasploitable::users",
+        "metasploitable::mysql",
+        "metasploitable::apache_continuum",
+        "metasploitable::apache",
+        "metasploitable::php_545",
+        "metasploitable::phpmyadmin",
+        "metasploitable::proftpd",
+        "metasploitable::docker",
+        "metasploitable::samba",
+        "metasploitable::sinatra",
+        "metasploitable::unrealircd",
+        "metasploitable::chatbot",
+        "metasploitable::payroll_app",
+        "metasploitable::readme_app",
+        "metasploitable::cups",
+        "metasploitable::drupal",
+        "metasploitable::knockd",
+        "metasploitable::iptables",
+        "metasploitable::flags",
+        "metasploitable::sshd"
+      ]
+    },
+    {
+      "type": "shell",
+      "execute_command": "echo '{{user `ssh_pass`}}' | {{ .Vars }} sudo -E -S sh '{{ .Path }}'",
+      "inline": [
+        "apt-get remove chef"
+      ]
+    }
+  ]
+}
